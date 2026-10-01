@@ -1,0 +1,146 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  linux:
+    name: "Linux / Perl ${{ matrix.perl }}"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        perl: ["5.40", "5.38", "5.36", "5.34", "5.32", "5.30", "5.26", "5.20", "5.16", "5.10"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up perl
+        uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: ${{ matrix.perl }}
+          install-modules-with: cpanm
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdeflate-dev pkg-config
+
+      - name: Install optional cross-test dependencies
+        if: matrix.perl == '5.40'
+        run: cpanm --notest Gzip::Faster || true
+
+      - name: Build
+        run: |
+          perl Makefile.PL
+          make
+
+      - name: Run test suite
+        run: prove -bv t/*.t
+
+  macos:
+    name: "macOS / Perl ${{ matrix.perl }}"
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        perl: ["5.40", "5.38"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up perl
+        uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: ${{ matrix.perl }}
+
+      - name: Install system dependencies
+        run: brew install libdeflate pkg-config
+
+      - name: Build
+        run: |
+          perl Makefile.PL
+          make
+
+      - name: Run test suite
+        run: prove -bv t/*.t
+
+  threaded-perl:
+    name: "Threaded Perl (concurrent thread-safety)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up threaded perl 5.40
+        uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: "5.40"
+          multi-thread: true
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdeflate-dev pkg-config
+
+      - name: Verify ithreads
+        run: perl -V:useithreads
+
+      - name: Build
+        run: |
+          perl Makefile.PL
+          make
+
+      - name: Run tests (including concurrent threads test)
+        run: prove -bv t/*.t
+
+  author-tests:
+    name: "Author / Release tests (POD, Manifest, Distribution)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up perl 5.40
+        uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: "5.40"
+
+      - name: Install system & CPAN test tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdeflate-dev pkg-config
+          cpanm --notest Test::Pod Test::CheckManifest Test::CPAN::Changes Gzip::Faster ExtUtils::PkgConfig
+
+      - name: Build
+        run: |
+          perl Makefile.PL
+          make
+
+      - name: Author tests
+        run: prove -bv xt/*.t
+
+      - name: Distcheck
+        run: make distcheck
+
+  no-libdeflate:
+    name: "Probe without libdeflate (OS unsupported exit 0)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up perl 5.40
+        uses: shogo82148/actions-setup-perl@v1
+        with:
+          perl-version: "5.40"
+
+      - name: Verify Makefile.PL exits 0 with OS unsupported
+        run: |
+          output=$(perl Makefile.PL 2>&1)
+          exit_code=$?
+          echo "$output"
+          if [ $exit_code -ne 0 ]; then
+            echo "Expected exit code 0, got $exit_code"
+            exit 1
+          fi
+          echo "$output" | grep -q "OS unsupported"
