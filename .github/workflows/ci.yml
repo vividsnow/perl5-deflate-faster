@@ -15,7 +15,7 @@ jobs:
         perl: ["5.40", "5.38", "5.36", "5.34", "5.32", "5.30", "5.26", "5.20", "5.16", "5.10"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up perl
         uses: shogo82148/actions-setup-perl@v1
@@ -49,7 +49,7 @@ jobs:
         perl: ["5.40", "5.38"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up perl
         uses: shogo82148/actions-setup-perl@v1
@@ -71,7 +71,7 @@ jobs:
     name: "Threaded Perl (concurrent thread-safety)"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up threaded perl 5.40
         uses: shogo82148/actions-setup-perl@v1
@@ -95,11 +95,48 @@ jobs:
       - name: Run tests (including concurrent threads test)
         run: prove -bv t/*.t
 
+  debugging-32bit:
+    name: "i386 / DEBUGGING perl with 32-bit integers"
+    runs-on: ubuntu-latest
+    env:
+      PERL_VERSION: "5.42.0"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Cache perl
+        uses: actions/cache@v6
+        with:
+          path: ~/perl32
+          key: perl32-debugging-${{ env.PERL_VERSION }}-v1
+
+      - name: Build and test
+        run: |
+          mkdir -p ~/perl32
+          docker run --rm --platform linux/386 -e PERL_VERSION \
+            -v "$PWD:/src:ro" -v "$HOME/perl32:/opt/perl" \
+            debian:stable-slim sh -ec '
+              apt-get update -qq
+              apt-get install -y -qq gcc make libdeflate-dev pkg-config curl ca-certificates >/dev/null
+              if [ ! -x /opt/perl/bin/perl ]; then
+                cd /tmp
+                curl -sSfL "https://www.cpan.org/src/5.0/perl-$PERL_VERSION.tar.gz" | tar --no-same-owner -xz
+                cd "perl-$PERL_VERSION"
+                ./Configure -des -Dprefix=/opt/perl -DDEBUGGING -Dman1dir=none -Dman3dir=none >/dev/null
+                make -j"$(nproc)" >/dev/null
+                make install >/dev/null
+              fi
+              /opt/perl/bin/perl -MConfig -e "die qq{ivsize \$Config{ivsize}, expected 4\n} unless \$Config{ivsize} == 4; die qq{not DEBUGGING\n} unless \$Config{ccflags} =~ /DDEBUGGING/"
+              cp -r /src /build
+              cd /build
+              /opt/perl/bin/perl Makefile.PL
+              make
+              /opt/perl/bin/prove -b t/'
+
   author-tests:
     name: "Author / Release tests (POD, Manifest, Distribution)"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up perl 5.40
         uses: shogo82148/actions-setup-perl@v1
@@ -127,7 +164,7 @@ jobs:
     name: "Probe without libdeflate (OS unsupported exit 0)"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up perl 5.40
         uses: shogo82148/actions-setup-perl@v1
